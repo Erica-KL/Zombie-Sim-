@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Zombie Sim</title>
+<style>
+  :root {
+    --surface-page:   #141414;
+    --surface-card:   #1f1f1e;
+    --border:         rgba(255,255,255,0.10);
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --human:          #32b450;
+    --zombie:         #c83232;
+    --dead:           #5a5a58;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+
+  .dashboard {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    padding: 16px;
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+
+  #sim { display: block; border-radius: 6px; background: var(--surface-page); }
+
+  .sidebar { display: flex; flex-direction: column; gap: 16px; width: 300px; }
+
+  .stat-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .stat-value {
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin: 4px 0;
+  }
+
+  .stat-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .day-badge {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 4px 0;
+  }
+
+  .chart-card svg { display: block; width: 100%; height: auto; }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+
+  .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .swatch-human { background: var(--human); }
+  .swatch-zombie { background: var(--zombie); }
+
+  .axis-label { fill: var(--text-muted); font-size: 9px; }
+
+  .pause-btn {
+    margin-top: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .pause-btn:hover { background: #262625; }
+
+  .agent-select {
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+
+  #agent-detail { line-height: 1.6; }
+  #agent-detail b { color: var(--text-primary); }
+
+  #tooltip {
+    position: fixed;
+    display: none;
+    pointer-events: none;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    z-index: 10;
+  }
+
+  #tooltip b { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+
+  <div class="card">
+    <div class="card-title">Zombie Sim</div>
+    <canvas id="sim" width="800" height="600"></canvas>
+  </div>
+
+  <div class="sidebar">
+
+    <div class="card">
+      <div class="stat-label">Tick</div>
+      <div class="stat-value" id="tick-value">0</div>
+      <div class="day-badge" id="day-badge">&nbsp;</div>
+      <div class="stat-sub" id="pop-sub">&nbsp;</div>
+      <button class="pause-btn" id="pause-btn">Pause</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Research Lab</div>
+      <div class="stat-sub" id="lab-stats">&nbsp;</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Inspect agent</div>
+      <select id="agent-select" class="agent-select">
+        <option value="">-- choose an agent --</option>
+      </select>
+      <div class="stat-sub" id="agent-detail">&nbsp;</div>
+    </div>
+
+  </div>
+
+</div>
+
+<div class="card chart-card" style="margin-top:16px;">
+  <div class="card-title">Population over time</div>
+  <svg id="chart" viewBox="0 0 900 220">
+    <!-- gridlines and y labels, positioned once yMax is known -->
+    <g id="grid"></g>
+    <!-- vertical gridlines and week labels, rebuilt every poll as history grows -->
+    <g id="xgrid"></g>
+    <!-- baseline -->
+    <line id="baseline" x1="50" y1="190" x2="880" y2="190" stroke="var(--baseline)" stroke-width="1"/>
+    <!-- series -->
+    <polyline id="line-human" fill="none" stroke="var(--human)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline id="line-zombie" fill="none" stroke="var(--zombie)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle id="dot-human" r="4" fill="var(--human)" stroke="var(--surface-card)" stroke-width="2"/>
+    <circle id="dot-zombie" r="4" fill="var(--zombie)" stroke="var(--surface-card)" stroke-width="2"/>
+  </svg>
+  <div class="legend">
+    <span class="legend-item"><span class="swatch swatch-human"></span>Humans</span>
+    <span class="legend-item"><span class="swatch swatch-zombie"></span>Zombies</span>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const canvas = document.getElementById("sim"); //the canvas
+const ctx = canvas.getContext("2d"); //draws everything below
+const tooltip = document.getElementById("tooltip"); //hover box
+const BUFFER = 15; //so agents on the edge dont get cut off
+let simWidth = 1000, simHeight = 1000; //set from /status
+canvas.width = simWidth + BUFFER * 2; //starting size before /status loads
+canvas.height = simHeight + BUFFER * 2;
+let lastAgents = []; //last snapshot, for hover/click
+let isNight = false; //tints the canvas at night
+let researchTicks = 20; //ticks for one dose
+let labBounds = [350, 250, 450, 350]; //from /status, [x0,y0,x1,y1]
+let dayLength = 10; //from /status
+
+function colorFor(agent) { //red zombie green human gray dead
+  if (agent.health_status === "dead") return "rgb(90,90,88)"; //check dead first
+  return agent.agent_type === "zombie" ? "rgb(200,50,50)" : "rgb(50,180,80)";
+}
+
+function formatAgent(agent) { //fields shared by tooltip and inspector
+  //pulls straight from the agent json
+  return `
+    <b>Agent #${agent.agent_id}</b><br>
+    type: ${agent.agent_type}<br>
+    status: ${agent.health_status}<br>
+    position: (${agent.x.toFixed(0)}, ${agent.y.toFixed(0)})<br>
+    speed: ${agent.movement_speed}<br>
+    life: ${agent.life_value}<br>
+    strength: ${agent.strength.toFixed(1)}<br>
+    intelligence: ${agent.intelligence.toFixed(1)}<br>
+    susceptibility: ${agent.susceptibility.toFixed(1)}<br>
+    aggression: ${agent.aggression.toFixed(1)}<br>
+    bites survived: ${agent.bites_survived}<br>
+    medicine carried: ${agent.medicine_count}<br>
+    lab progress: ${agent.lab_progress}/${researchTicks} ticks (${Math.round(100 * agent.lab_progress / researchTicks)}%)
+  `;
+}
+
+let selectPopulated = false; //ids dont change so only fill dropdown once
+
+function drawLab() { //faint line for the lab box, nothing fancy
+  const [x0, y0, x1, y1] = labBounds; //corners
+  const w = x1 - x0, h = y1 - y0; //math instead of storing separately
+
+  ctx.strokeStyle = "rgba(120,160,255,0.5)"; //faint blue
+  ctx.lineWidth = 1; //thin
+  ctx.strokeRect(x0, y0, w, h); //outline only, no fill
+
+  ctx.fillStyle = "rgba(200,220,255,0.85)"; //brighter so the label reads
+  ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText("Research Lab", x0 + 8, y0 + h + 16); //below the box so it doesnt overlap
+}
+
+async function drawAgents() { //redraws from newest snapshot, runs 10x a sec
+  const res = await fetch("/agents"); //ask server where everyone is
+  const agents = await res.json(); //json list of agents
+  lastAgents = agents; //save it for hover/click/inspector
+  ctx.fillStyle = isNight ? "#0a0a12" : "#141414"; //darker at night
+  ctx.fillRect(0, 0, canvas.width, canvas.height); //covers the buffer too
+
+  ctx.save(); //save the origin
+  ctx.translate(BUFFER, BUFFER); //draw in real sim coords now
+
+  drawLab(); //lab first so dots sit on top of it
+
+  for (const agent of agents) { //one dot per agent
+    ctx.beginPath(); //new shape or dots chain together
+    ctx.arc(agent.x, agent.y, 6, 0, Math.PI * 2); //circle radius 6
+    ctx.fillStyle = colorFor(agent);
+    ctx.fill();
+  }
+
+  ctx.restore(); //undo the translate
+
+  if (!selectPopulated && agents.length) { //first time agents show up
+    for (const agent of agents) {
+      agentSelect.insertAdjacentHTML("beforeend", //one option per agent
+        `<option value="${agent.agent_id}">Agent #${agent.agent_id} (${agent.agent_type})</option>`);
+    }
+    selectPopulated = true; //never rebuild the dropdown again
+  }
+  updateInspector(); //refresh incase selected agent changed
+}
+
+function updateInspector() { //fills the inspect agent panel
+  const id = agentSelect.value; //current dropdown value
+  if (!id) { //nothing picked
+    agentDetail.innerHTML = "&nbsp;"; //keeps the box from collapsing
+    return;
+  }
+  const agent = lastAgents.find(a => String(a.agent_id) === id); //find in latest snapshot
+  agentDetail.innerHTML = agent ? formatAgent(agent) : "&nbsp;"; //could be missing a frame
+}
+
+//---------------------hit testing for hover and click
+function nearestAgentAt(mx, my) { //closest dot to a point
+  let nearest = null;
+  let nearestDist = 10; //hit radius
+  for (const agent of lastAgents) { //loop everyone, fine at this size
+    const dist = Math.hypot(agent.x - mx, agent.y - my);
+    if (dist < nearestDist) {
+      nearest = agent; //closer than before
+      nearestDist = dist; //tighten the search
+    }
+  }
+  return nearest; //null if nothing close enough
+}
+
+function canvasPos(event) { //mouse event to sim coords
+  const rect = canvas.getBoundingClientRect(); //canvas position on screen
+  return [event.clientX - rect.left - BUFFER, event.clientY - rect.top - BUFFER]; //subtract buffer too
+}
+
+//---------------------hover to inspect
+canvas.addEventListener("mousemove", (event) => { //fires while mouse moves
+  const [mx, my] = canvasPos(event); //mouse in sim coords
+  const nearest = nearestAgentAt(mx, my); //over someone?
+
+  if (!nearest) {
+    tooltip.style.display = "none"; //not over anyone
+    return;
+  }
+
+  tooltip.innerHTML = formatAgent(nearest); //same fields as inspector
+  tooltip.style.left = (event.clientX + 14) + "px"; //offset from the cursor
+  tooltip.style.top = (event.clientY + 14) + "px";
+  tooltip.style.display = "block";
+});
+
+//---------------------click to inspect
+canvas.addEventListener("click", (event) => { //fires on click
+  const [mx, my] = canvasPos(event); //click in sim coords
+  const nearest = nearestAgentAt(mx, my); //who got clicked
+  if (!nearest) return; //clicked nothing
+  agentSelect.value = String(nearest.agent_id); //select wants a string
+  updateInspector(); //update right away
+});
+
+canvas.addEventListener("mouseleave", () => { //mouse left canvas
+  tooltip.style.display = "none"; //hide it
+});
+
+//---------------------agent inspector dropdown
+const agentSelect = document.getElementById("agent-select"); //the dropdown
+const agentDetail = document.getElementById("agent-detail"); //panel below it
+agentSelect.addEventListener("change", updateInspector); //refresh on pick
+
+//---------------------pause control
+const pauseBtn = document.getElementById("pause-btn"); //pause/resume button
+pauseBtn.addEventListener("click", async () => {
+  const res = await fetch("/pause", { method: "POST" }); //flip server pause flag
+  const state = await res.json(); //{"paused": true/false}
+  pauseBtn.textContent = state.paused ? "Resume" : "Pause"; //match new state
+});
+
+//---------------------chart geometry, plot box in the 900x220 viewbox
+const PLOT = { left: 50, right: 880, top: 20, bottom: 190 }; //drawable area
+const PAD = 10; //breathing room top/bottom
+let yMax = 5; //grows with population, never shrinks
+
+function niceMax(value) { //round up to next multiple of 5
+  return Math.max(5, Math.ceil(value / 5) * 5); //keeps labels round
+}
+
+function yFor(value, max) { //population number to y position
+  const top = PLOT.top + PAD, bottom = PLOT.bottom - PAD; //padded range
+  return bottom - (value / max) * (bottom - top); //0 bottom, max top
+}
+
+function buildGrid(max) { //redraws gridlines and y labels
+  const grid = document.getElementById("grid"); //g element
+  grid.innerHTML = ""; //clear before rebuild
+  const steps = [0, max / 2, max]; //bottom middle top
+  for (const value of steps) {
+    const y = yFor(value, max); //vertical position
+    grid.insertAdjacentHTML("beforeend", //adds line and label
+      `<line x1="${PLOT.left}" y1="${y}" x2="${PLOT.right}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>
+       <text class="axis-label" x="${PLOT.left - 6}" y="${y + 3}" text-anchor="end">${Math.round(value)}</text>`);
+  }
+}
+
+function historyMax(history) { //highest count seen so far
+  let max = 0;
+  for (const [, human, zombie] of history) { //skip tick, just counts
+    if (human > max) max = human;
+    if (zombie > max) max = zombie;
+  }
+  return max;
+}
+
+function xAxisUnit(maxTick) { //picks week/month/year labels
+  const weekTicks = dayLength * 7; //ticks in a week
+  const monthTicks = dayLength * 30; //fake month, 30 days
+  const yearTicks = monthTicks * 12; //fake year, 12 months
+  if (maxTick / weekTicks <= 50) return { ticks: weekTicks, prefix: "W" }; //short runs weekly
+  if (maxTick / monthTicks <= 12) return { ticks: monthTicks, prefix: "M" }; //then monthly
+  return { ticks: yearTicks, prefix: "Y" }; //then yearly
+}
+
+function buildXGrid(minTick, maxTick) { //vertical gridlines and labels
+  const xgrid = document.getElementById("xgrid"); //g element
+  xgrid.innerHTML = ""; //rebuilt every poll
+  const { ticks: unitTicks, prefix } = xAxisUnit(maxTick); //pick granularity
+  const span = Math.max(1, maxTick - minTick); //avoid divide by zero
+  const first = Math.max(1, Math.ceil(minTick / unitTicks)); //first unit in view
+  const last = Math.floor(maxTick / unitTicks); //last unit in view
+  for (let n = first; n <= last; n++) { //label per unit
+    const x = PLOT.left + ((n * unitTicks - minTick) / span) * (PLOT.right - PLOT.left); //x position
+    xgrid.insertAdjacentHTML("beforeend",
+      `<line x1="${x}" y1="${PLOT.top}" x2="${x}" y2="${PLOT.bottom}" stroke="var(--grid)" stroke-width="1"/>
+       <text class="axis-label" x="${x}" y="${PLOT.bottom + 10}" text-anchor="middle">${prefix}${n}</text>`);
+  }
+}
+
+function pointsFor(history, key, max, minTick, maxTick) { //points string for one line
+  const span = Math.max(1, maxTick - minTick); //same divide by zero guard
+  return history.map(row => {
+    const [t, human, zombie] = row; //tick, humans, zombies
+    const value = key === "human" ? human : zombie; //pick the line
+    const x = PLOT.left + ((t - minTick) / span) * (PLOT.right - PLOT.left); //x position
+    return `${x},${yFor(value, max)}`; //x,y pair
+  }).join(" "); //joins into polyline format
+}
+
+async function drawStatus() { //tick/day/population/history, everything except the dots
+  const res = await fetch("/status");
+  const status = await res.json();
+
+  document.getElementById("tick-value").textContent = status.tick; //big tick number
+  document.getElementById("pop-sub").textContent =
+    `${status.human_count} humans · ${status.zombie_count} zombies`; //line under it
+  document.getElementById("day-badge").textContent =
+    `${status.night ? "\u{1F319} Night" : "\u{2600}️ Day"} · Day ${status.day}`; //emoji plus day
+  isNight = status.night; //read next frame for the tint
+  researchTicks = status.research_ticks; //for the lab progress percent
+  labBounds = status.lab_bounds; //drawLab reads this
+  dayLength = status.day_length; //buildXGrid reads this
+  if (status.width !== simWidth || status.height !== simHeight) { //resize if sim size changed
+    simWidth = status.width;
+    simHeight = status.height;
+    canvas.width = simWidth + BUFFER * 2; //wipes canvas but it redraws every frame anyway
+    canvas.height = simHeight + BUFFER * 2;
+  }
+  document.getElementById("lab-stats").innerHTML =
+    `${status.medicine_produced} doses produced<br>${status.medicine_in_circulation} currently carried`;
+  pauseBtn.textContent = status.paused ? "Resume" : "Pause"; //sync incase paused elsewhere
+
+  const history = status.history.length ? status.history : [[0, status.human_count, status.zombie_count]];
+  //                                       ^ fallback to current state before the first real tick
+  const minTick = history[0][0]; //oldest tick, always 1
+  const maxTick = history[history.length - 1][0]; //newest tick
+  buildXGrid(minTick, maxTick); //rebuilt every poll
+
+  const neededYMax = niceMax(historyMax(history)); //scale to fit everything so far
+  if (neededYMax > yMax) { //only grows
+    yMax = neededYMax;
+    buildGrid(yMax); //rebuild labels only when scale changes
+  }
+
+  const humanPoints = pointsFor(history, "human", yMax, minTick, maxTick); //full history as points
+  const zombiePoints = pointsFor(history, "zombie", yMax, minTick, maxTick);
+  document.getElementById("line-human").setAttribute("points", humanPoints); //redraw line
+  document.getElementById("line-zombie").setAttribute("points", zombiePoints);
+
+  const lastHuman = humanPoints.split(" ").pop().split(","); //last x,y pair
+  const lastZombie = zombiePoints.split(" ").pop().split(",");
+  document.getElementById("dot-human").setAttribute("cx", lastHuman[0]); //end of line marker
+  document.getElementById("dot-human").setAttribute("cy", lastHuman[1]);
+  document.getElementById("dot-zombie").setAttribute("cx", lastZombie[0]);
+  document.getElementById("dot-zombie").setAttribute("cy", lastZombie[1]);
+}
+
+drawAgents(); //draw right away, dont wait on the interval
+drawStatus();
+setInterval(drawAgents, 100); //matches server movement interval
+setInterval(drawStatus, 1000); //matches server tick
+</script>
+</body>
+</html>
