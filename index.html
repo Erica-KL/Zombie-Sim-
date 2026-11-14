@@ -210,6 +210,9 @@
 
 <div id="tooltip"></div>
 
+<!-- benchmark, short tests at different scales -->
+<div style="margin:16px"><span id="bench-out"></span></div>
+
 <script>
 const canvas = document.getElementById("sim"); //the canvas
 const ctx = canvas.getContext("2d"); //draws everything below
@@ -481,6 +484,14 @@ async function drawStatus() { //tick/day/population/history, everything except t
   document.getElementById("dot-zombie").setAttribute("cx", lastZombie[0]);
   document.getElementById("dot-zombie").setAttribute("cy", lastZombie[1]);
 }
+
+(async () => { //runs the short tests on the server as soon as the page loads, sim is paused till then
+  const out = document.getElementById("bench-out");
+  out.textContent = "loading dont start yet";
+  const rows = await (await fetch("/bench")).json(); //[agents, cpu cores, seconds per tick]
+  out.innerHTML = "<table><tr><th>agents</th><th>cpu cores</th><th>time taken (s per tick)</th></tr>" +
+    rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("") + "</table>"; //table at the bottom
+})();
 
 drawAgents(); //draw right away, dont wait on the interval
 drawStatus();
